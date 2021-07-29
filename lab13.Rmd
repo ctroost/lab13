@@ -1,0 +1,507 @@
+---
+title: "STAT 209: SQL Part I"
+output:
+  html_document:
+    css: ../lab.css
+    highlight: pygments
+    theme: cerulean
+    code_folding: hide
+    toc: true
+    toc_float: true
+  pdf_document: default
+---
+
+```{r setup, include = FALSE}
+library(tidyverse)
+theme_set(theme_bw()) # change theme for ggplot2
+knitr::opts_chunk$set(
+  tidy    = FALSE,       # display code as typed
+  size    = "small",     # slightly smaller font for code
+  message = FALSE)  # suppresses some unwanted output
+```
+
+
+# Basic query components in SQL
+
+## Goal
+
+Learn the SQL equivalents of the basic "five verbs" from `dplyr`, and practice using them to pull data from large databases stored on a remote server.
+
+## Setting up the connection
+
+Before we can interact with the data, we need to set up a connection to the server that hosts the database.  This is similar to what you do when you set up your RStudio account to talk to the GitHub servers: you need to supply the address where the data is, and a set of credentials to log in to the remote server.
+
+The database we'll work with is hosted at Smith College where the first author of your textbook teaches; and the authors have provided a convenience function with a general-use set of credentials to make connecting with that database quick and easy.
+
+**Code:**
+
+```{r, message = FALSE}
+library(tidyverse)
+library(dbplyr)  ## Note the 'b'; this is not dplyr
+library(mdsr)    ## Package for our book
+library(RMySQL)  ## Standard R/SQL interface package
+db <- dbConnect_scidb("airlines")
+```
+
+We can see what data tables are available with `dbListTables()`.
+
+**Code:**
+```{r}
+dbListTables(db)
+```
+
+### Interacting with arbitrary databases
+
+(You can skip this section for now; it's here for reference if later you want to use SQL with data other than `scidb`)
+
+For more general usage (that is, to interact with databases other than `scidb` at Smith), we can use the generic `dbConnect()` function.  You can see how this is done by peeking at the source code or `dbConnect_scidb()`:
+
+**Code**
+```{r}
+dbConnect_scidb
+```
+
+So using this function with the argument "airlines" is equivalent to typing
+
+```{r, eval = FALSE}
+dbConnect(RMySQL::MySQL(), 
+    dbname   = "airlines",
+    host     = "mdsr.cdc7tgkkqd0n.us-east-1.rds.amazonaws.com",
+    user     = "mdsr_public",
+    password = "ImhsmflMDSwR")
+```
+
+This is fine in this case since `mdsr_public` is a read-only account that has been set up for anyone to use, and so privacy of credentials is not a big deal.  However, for more general usage, it's a good idea to store your credentials in a configuration file that you keep locally, instead of typing out your password in your source code.
+
+The config file should be a plain text file called `.my.cnf` and placed in your home directory (note the leading `.`, which is a convention for this sort of file; note that this makes it hidden if using a standard file browser). It should be formatted as follows
+
+```{}
+[scidbAirlines]
+dbname = "airlines"
+host = "mdsr.cdc7tgkkqd0n.us-east-1.rds.amazonaws.com"
+user = "mdsr_public"
+password = "ImhsmflMDSwR"
+```
+
+where the part in square brackets can be any shorthand you want to use for this database.  Then you can open the connection by typing
+
+**Code:**
+```{r, eval = FALSE}
+db <-  dbConnect(RMySQL::MySQL(), group = "scidbAirlines")
+```
+
+The resulting R object is equivalent to the object `db` we created above using the helper function that hardcoded the access credentials for us, and represents a connection to the remote database.
+
+
+## Constructing a `tbl` view of the dataset
+
+Sometimes you can avoid having to write much SQL code by creating a "view" of the dataset that you can interact with as though it were an R data frame (technically an instance of the `tbl` class)
+
+Here's how to create a `tbl` view of the `flights` data table
+
+**Code:**
+```{r}
+flights <- tbl(db, "flights")
+```
+
+(You could do the same with other tables from the list you printed out with `dbListTables()` above)
+
+
+## The basic SQL verbs
+
+You can do a lot of data-wrangling by interacting with this `tbl` view, without ever writing a single line of SQL code.  However, for the cases when that doesn't work, let's dive into writing basic SQL queries.
+
+Here's a summary list of the basic verbs and what they're used for (reproduced from MDSR):
+
+![Image Source: Baumer et al. _Modern Data Science with R_.](verbs.png)
+
+**Note:** SQL is less flexible than `dplyr` about what order the verbs show up in.  The order in the above table is the canonical one, and verbs earlier in the list **cannot** appear after verbs later in the list. We won't always use every verb, but the ones we do use have to be in order from the earliest one in the list to the latest. The only verbs that **have** to occur in every query are `SELECT` and `FROM`, which specify the fields (variables/columns) we want to return, and the table from which we want to get them, respectively. So the simplest query, which is equivalent to just printing a dataset  in R, is
+
+```{}
+SELECT *
+    FROM my_data
+```
+
+where the `*` is a "wildcard" that means we are selecting "everything". That said, **never do this** --- many SQL databases are very large, and if you write a query that is asking to print out all the data, there's a chance your computer (or even the RStudio server) could run out of memory and crash. Especially if multiple people are using it at once!
+
+## Translating `dplyr` to SQL
+
+Here's a table summarizing how to translate between `dplyr` verbs and SQL verbs (also reproduced from MDSR):
+
+![Image Source: Baumer et al. _Modern Data Science with R_](dplyr-sql-translation.png)
+
+## Running SQL queries in Markdown
+
+In a Markdown document, you can create an executable raw SQL query by creating a code chunk that opens with `{sql connection=db}` (where `db` is whatever you named your connection object in a previous R code chunk) in place of the `r` that is usually there. 
+
+The `sql` part tells RStudio that this chunk is to be interpreted as SQL code.
+
+The `connection=db` part tells it that the database we are querying is accessed through the connection object called `db`.
+
+Before we do any actual queries, let's get a feel for the structure of the database.
+
+We used `dbListTables()` to list the tables in a database using R code. The SQL equivalent of this is `SHOW TABLES`. 
+
+The following code chunk uses the `{sql connection=db}` specification in the chunk options, so that it is treated as SQL code which accesses the database that the `db` connection object is linked to.
+
+(You might get an error when running the following that the connection to the SQL server was lost. If this happens, just run the previous chunks again to "refresh" `db` and reestablish the connection.)
+
+**Code:**
+```{sql connection = db}
+SHOW TABLES;
+```
+
+To see what **variables** (or "fields", in database lingo) are in a particular table, we can use `DESCRIBE`. This is similar to `glimpse()` in R.
+
+```{sql connection = db}
+DESCRIBE flights;
+```
+
+## Your first query: `SELECT * FROM <table> LIMIT 0,<n>`
+
+To view the first few rows of the `flights` data without creating a `tbl` view first, we can use a `SELECT * FROM <table> LIMIT 0,<n>` construction (where `n` is the number of rows we want to view)
+
+**Caution:** Never run a command like the above without the `LIMIT` component unless you know for sure that the table you're accessing is small.  Omitting this will cause your computer to try to retrieve and print the entirety of the database, which in this case is over 100 million records.  This could crash your computer and is likely to slow the server way down for everyone else.
+
+**Code:**
+```{sql, connection = db}
+SELECT * FROM flights LIMIT 0,10;
+```
+
+The command ends in a semicolon, explicitly indicating that we are finished with our query. 
+
+Note that in the above code, `flights` is referring to the table in the database, not the R object we created above, which is a view of the data.
+
+This is a lot of information even for just 10 cases.  We can restrict the output to just the variables we care about by just listing their names separated by commas in place of the wildcard `*`.  This is equivalent to the `select()` verb in `dplyr`.  For example:
+
+**Code:**
+```{sql, connection = db}
+SELECT year,month,day,carrier,flight,origin,dest FROM flights
+    LIMIT 0,10;
+```
+
+## Using `WHERE` to filter data
+
+To restrict the output to certain cases, we use the `WHERE` verb (roughly equivalent to `filter()` in `dplyr`).  As with `filter()` we can create conjunctions of filtering conditions; in SQL we just use the `AND` keyword.  For example, to get only United flights on June 29, 2012, we can do:
+
+**Code**
+```{sql connection=db}
+SELECT year,month,day,carrier,flight,origin,dest 
+  FROM flights
+  WHERE year=2013 AND 
+        month=6 AND 
+        day=29 AND 
+        carrier='UA'
+  LIMIT 0,10; -- just to be safe (note the -- for comments; similar to the # in R!)
+```
+
+Note the single `=` signs here: In `dplyr` we would use `==` to check for equality.
+
+
+### Filtering on variables not in the output
+
+In `dplyr` if we want to use a variable as part of a filtering condition, it has to be part of the dataset **at the time the `filter` occurs**.  For example, if I want to omit the `year`, `month`, `day` and `carrier` columns from the above dataset since I am only looking at data from one specific day and carrier, I would need to do the `filter()` _before_ doing the `select()`. Since `dplyr` pipelines execute commands in sequence, passing the result of one on to the next, if we tried to `select()` first, the `year`, `month`, `day` and `carrier` columns will not be present at the point when the `filter()` occurs.
+
+The following code will produce an error.
+
+**Code:**
+```{r, eval = FALSE}
+flights %>%
+  select(flight,origin,dest) %>%
+  filter(year == 2012 & month == 6 & day == 29 & carrier == 'UA') %>%
+  head(10)
+```
+
+However, if we do the `filter()` first, it's fine because the input to `filter()` is the full dataset, and `select()` doesn't care what rows we have.
+
+```{r}
+flights %>%
+  filter(year == 2012 & month == 6 & day == 29 & carrier == 'UA') %>%
+  select(flight, origin, dest) %>%
+  head(10)
+```
+
+In SQL, on the other hand, `SELECT` must **always** occur **before** `WHERE` in a query.  However, we are allowed to refer to variables in a `WHERE` statement that are not in the output.  In fact `WHERE` can only refer to variables in the **original** data, and **cannot** refer to variables that might be created within the query.
+
+**Code:**
+```{sql connection = db}
+SELECT flight, origin, dest FROM flights
+  WHERE year    = 2012 -- can continue queries on the next line
+    AND month   = 6    -- indentation and line breaks are just to facilitate readability
+    AND day     = 29    
+    AND carrier = 'UA'
+  LIMIT 0,10; -- finish the query with a semicolon
+```
+
+### `BETWEEN`
+
+To get flights from a particular date range, say June 25th through 30th, 2012, we can use `BETWEEN` with `WHERE`:
+
+**Code**
+
+```{sql connection = db}
+SELECT carrier, flight FROM flights
+  WHERE year  = 2012
+    AND month = 6
+    AND day BETWEEN 25 AND 30
+  LIMIT 0,10;
+```
+
+
+## Creating new variables (SQL analog of `mutate()`)
+
+If, however, we wanted to specify a date range that spanned parts of two different months (say, June 15th through July 14th), this would be cumbersome to write using `WHERE` statements alone.  We could say
+
+**Code:**
+```{sql connection=db, eval = FALSE}
+SELECT month,day,carrier,flight FROM flights
+  WHERE year=2012
+    AND (month=6 AND day BETWEEN 15 AND 30) --note the parens for grouping
+     OR (month=7 AND day BETWEEN 1 and 14)
+  LIMIT 0,10;
+```
+
+but this is a bit awkward.  Instead, we may want to create a new variable that represents the date as a single number that we can reference.
+
+There isn't actually a verb in SQL that directly corresponds to `mutate()` in `dplyr`; it turns out we do this as part of the `SELECT` step, with the help of the keyword `as` which creates an "alias" for an expression.
+
+The example below uses the `str_to_date()` function to translate year, month and date into a single value with which ordinal comparisons can be made.
+
+This will produce an error
+
+**Code:**
+```{sql connection = 'db', eval = FALSE}
+SELECT 
+  str_to_date(concat(year, '-', month, '-', day), '%Y-%m-%d') AS date,
+  origin,dest,flight,carrier
+FROM flights
+WHERE carrier='UA' AND date BETWEEN '2012-06-16' AND '2012-07-14'
+LIMIT 0,10
+```
+
+Why is are we getting an error to the effect that `date` is an "unknown column"?
+
+
+## Filtering on calculated variables: `HAVING`
+
+Remember we said above that `WHERE` only works with variables that exist in the original dataset?  That means we can't use `date` with `WHERE`, since `date` was calculated in our query.
+
+Instead of `WHERE`, we need to use the verb `HAVING`, which works much the same way, but allows us to use calculated variables.  The reason these are two different verbs is similar to why some programming languages require you to specify what data type you will pass to an argument: if the SQL engine knows what type of variable you are passing in, it allows the query to be run more efficiently, which is increasingly important as datasets get larger.
+
+It is generally slower to operate on calculated variables than on the original variables, so if possible, it is a good idea to do any filtering that you can using a `WHERE` clause so that the number of cases that `HAVING` has to look through is reduced. For example, in the following query, the year restriction in `WHERE` is redundant with the `date` restriction in `HAVING`, but by trimming the number of cases first, the query will strain computing resources much less.
+
+**Code:**
+
+```{sql connection = db}
+SELECT 
+    str_to_date(concat(year, '-', month, '-', day), '%Y-%m-%d') AS date,
+    origin,dest,flight,carrier
+  FROM flights
+  WHERE carrier='UA' AND year=2012
+  HAVING date BETWEEN '2012-06-16' AND '2012-07-14'
+  LIMIT 0,10
+```
+
+## Sorting with `ORDER BY` (similar to `arrange()` in `dplyr`)
+
+To sort the output, we can use `ORDER BY`, which works like `arrange()` in `dplyr`.  It has `asc` and `desc` options to control the sorting direction, and you can specify more than one clause to create nested sorts.  
+
+For example, to see all flights into JFK in the date range specified operated by United Airlines, 
+sorted first by date and then by flight number within dates:
+
+**Code:**
+```{sql connection = db, eval = FALSE}
+SELECT 
+  str_to_date(concat(year, '-', month, '-', day), '%Y-%m-%d') AS date,
+  origin,dest,flight,carrier
+FROM flights
+WHERE carrier='UA' AND year=2012 AND dest='JFK'
+HAVING date BETWEEN '2012-06-16' AND '2012-07-14'
+ORDER BY date asc, flight asc
+LIMIT 0,100;
+```
+
+## Aggregation (similar to `summarize()` in `dplyr`)
+
+SQL doesn't have a distinct verb that plays the role `summarize()` plays in `dplyr` pipelines: Just like with `mutate()` this job falls to `SELECT` as well.  We can ask for **aggregated variables** (which in `dplyr` is the job of `summarize()`) just as we can ask for **elementwise transformations** (the job of `mutate()`), using exactly the same syntax.  For example, to calculate the average departure delay for all flights on June 29th, 2012, we can do
+
+**Code:**
+```{sql connection = db}
+SELECT 
+  avg(dep_delay) AS avg_delay
+FROM flights
+WHERE year  = 2012 
+  AND month = 6 
+  AND day   = 29;
+```
+
+Note that we don't need a `LIMIT` here, since we're aggregating the dataset to a single number.
+
+(If you forgot that the SQL function for the average is `avg()` instead of `mean()` you can do
+
+**Code:**
+```{r}
+translate_sql(
+  mean(dep_delay, na.rm = TRUE)
+  )
+```
+
+though it turns out we don't need the quotes, and we can leave out the `OVER()` clause since it's empty anyway.
+
+There are two ways to get the number of records being aggregated over (for which we would use `n()` in `dplyr`): either `sum(1)` (which is like tallying a 1 for each entry and then adding them up to give the count) or `count(*)` (which is like the `n()` function that we've used to count rows:
+
+
+**Code:**
+
+```{sql connection = db}
+SELECT 
+  sum(1)         AS N1,
+  count(*)       AS N2,  -- redundant; just to illustrate
+  avg(dep_delay) AS avg_delay
+FROM flights
+WHERE year  = 2012 
+  AND month = 6 
+  AND day   = 29;
+```
+
+
+## `GROUP BY`
+
+Conveniently, the SQL verb equivalent to `dplyr`'s `group_by()` is also called `GROUP BY`.  Except now it goes toward the end of the query, after the aggregations we want are specified, and we need to explicitly indicate that we want the grouping variable included in the output (this happened automatically in `dplyr`).  
+
+To compute average departure delay on a specific day by carrier, and to then sort carriers in ascending order of mean delay:
+
+```{sql connection = db}
+SELECT 
+  carrier,
+  count(*)       AS num_flights,
+  avg(dep_delay) AS avg_delay
+FROM flights
+WHERE year  = 2012
+  AND month = 6 
+  AND day   = 29
+GROUP BY carrier
+ORDER BY avg_delay ASC;
+```
+
+Notice that, unlike `WHERE`, the `ORDER BY` component here is sorting the output based on what shows up in the results, not what was in the original data.
+
+1. Suppose we want to restrict our results to bigger airlines; namely those with over 1000 flights that day.  Copy and modify the above query to achieve this.  (Hint: you won't need to modify the actual grouping and summarization, but you'll need to "filter" using your summary variable.) Be cognizant of the "canonical order" of the verbs and be careful not to run any queries that might try to print millions of records!
+
+---
+
+##### SOLUTION
+
+
+---
+
+## `JOIN` (and its variants)
+
+Recall that in the last part of the lab, you constructed a query to show the airlines with at least 1000 flights on June 29th, 2012 in order of the average arrival delay time.
+
+Here is one way you might have written that query:
+
+```{sql connection = db}
+SELECT 
+  carrier,
+  count(*) AS num_flights,
+  avg(dep_delay) as avg_delay
+FROM flights
+WHERE year = 2012 AND month = 6 AND day = 29
+GROUP BY carrier
+HAVING num_flights >= 1000
+ORDER BY avg_delay ASC;
+```
+
+The output above is useful if we know what airlines the two digit IDs correspond to.  Some of them are easily recognized; others not so much.  It would make our results more useful if we returned the actual full names of the carriers.  Since this is information about a carrier not about a flight, it is stored in a different table; namely, `carriers`. 
+
+To see the name of the tables available, we can use `SHOW TABLES`; and to see the structure of the `carriers` table, we can use `DESCRIBE`.
+
+**Code:**
+```{sql connection = db}
+SHOW TABLES;
+```
+
+```{sql connection = db}
+DESCRIBE carriers;
+```
+
+Looks like `name` is the variable/field we want.
+
+The four join types we learned in `dplyr` have equivalents in `SQL`, which are summarized below.  The equivalent of the `by=` argument that we use in `dplyr` to specify the column used to align the tables is the `ON` keyword.
+
+`dplyr`        | `SQL`
+---------------|--------
+`inner_join()` | `JOIN`  
+`left_join()`  | `LEFT JOIN`  
+`right_join()` | `RIGHT JOIN`  
+`full_join()`  | `CROSS JOIN`  
+`by=`          | `ON`
+
+To attach the carrier's full name to our result set from above, we could probably use any of these, but I think a left join makes the most sense (since we want to make sure to include each airline in our result set, even if for some reason its full name is missing from the carrier list; which it shouldn't be in this data, but still).
+
+Here's what that would look like as an SQL query:
+
+**Code:**
+```{sql connection = db}
+SELECT 
+  f.carrier,
+  c.name,
+  count(*) AS num_flights,
+  avg(dep_delay) as avg_delay
+FROM flights AS f
+LEFT JOIN carriers AS c ON f.carrier = c.carrier
+WHERE year = 2012 AND month = 6 AND day = 29
+GROUP BY carrier
+HAVING num_flights > 1000
+ORDER BY avg_delay ASC;
+```
+
+## Merging multiple queries: `UNION` (cf. `bind_rows()`)
+
+If we want to take two queries and merge their output into a single result set, we can simply concatenate the queries with the keyword `UNION`.  For example, if there are two particular days of interest for which we want to compute some things, we can write queries for each one and merge them.  Suppose for whatever reason we are interested in flights either on June 29th, 2012 or on October 13, 2014.
+
+**Code:**
+```{sql connection = db}
+(SELECT 
+  f.carrier,
+  c.name,
+  year, month, day,
+  count(*) AS num_flights
+FROM flights AS f
+LEFT JOIN carriers AS c ON f.carrier = c.carrier
+WHERE year = 2012 AND month = 6 AND day = 29
+GROUP BY carrier
+HAVING num_flights > 1000)
+UNION
+(SELECT 
+  f.carrier,
+  c.name,
+  year, month, day,
+  count(*) AS num_flights
+FROM flights AS f
+LEFT JOIN carriers AS c ON f.carrier = c.carrier
+WHERE year = 2014 AND month = 10 AND day = 13
+GROUP BY carrier
+HAVING num_flights > 1000)
+ORDER BY num_flights DESC;
+```
+
+Often, perhaps most of the time, there will be a more concise way to write a query like this, by, for example, writing conjunctions or disjunctions of `WHERE` statements and/or adding additional variables to the `GROUP BY` clause.  For example, the following is equvalent.
+
+```{sql connection = db}
+SELECT 
+  f.carrier,
+  c.name,
+  year, month, day,
+  count(*) AS num_flights
+FROM flights AS f
+LEFT JOIN carriers AS c ON f.carrier = c.carrier
+WHERE (year = 2012 AND month = 6 AND day = 29) OR
+      (year = 2014 AND month = 10 AND day = 13)
+GROUP BY carrier, year, month, day
+HAVING num_flights > 1000
+ORDER BY num_flights DESC;
+```
+
+but other times the union we want may not lend itself quite so easily to a concise conjunction or disjunction like this.
