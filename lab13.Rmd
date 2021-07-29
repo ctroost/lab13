@@ -257,7 +257,7 @@ If, however, we wanted to specify a date range that spanned parts of two differe
 SELECT month,day,carrier,flight FROM flights
   WHERE year=2012
     AND (month=6 AND day BETWEEN 15 AND 30) --note the parens for grouping
-     OR (month=7 AND day BETWEEN 1 and 14)
+     OR (month=7 AND day BETWEEN 1 AND 14)
   LIMIT 0,10;
 ```
 
@@ -280,7 +280,6 @@ LIMIT 0,10
 ```
 
 Why is are we getting an error to the effect that `date` is an "unknown column"?
-
 
 ## Filtering on calculated variables: `HAVING`
 
@@ -388,12 +387,21 @@ Notice that, unlike `WHERE`, the `ORDER BY` component here is sorting the output
 
 1. Suppose we want to restrict our results to bigger airlines; namely those with over 1000 flights that day.  Copy and modify the above query to achieve this.  (Hint: you won't need to modify the actual grouping and summarization, but you'll need to "filter" using your summary variable.) Be cognizant of the "canonical order" of the verbs and be careful not to run any queries that might try to print millions of records!
 
----
+```{sql connection = db}
+SELECT 
+  carrier,
+  count(*)       AS num_flights,
+  avg(dep_delay) AS avg_delay
+FROM flights
+WHERE year  = 2012
+  AND month = 6 
+  AND day   = 29
+GROUP BY carrier
+HAVING num_flights > 999
+ORDER BY avg_delay ASC
+LIMIT 0,100;
+```
 
-##### SOLUTION
-
-
----
 
 ## `JOIN` (and its variants)
 
